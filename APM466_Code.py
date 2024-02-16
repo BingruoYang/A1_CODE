@@ -186,7 +186,7 @@ for curve in df_spot:
     term = curve['term']
     rate = curve['rate']
     
-    # Use linear interpolation instead of CubicSpline
+
     ax.plot(term, rate, label=curve['date'])
 
 plt.legend()
@@ -248,7 +248,6 @@ dates_str = [datetime.datetime.strftime(today, '%b %d, %Y') for today in dates]
 ###5
 def interpolate(df, targets):
     '''
-
     :param df: curve data from different dates list[dict{date, rate, term}]
     :param targets: points you want to interpolate
     :return: interpolated data from different dates list[dict{}]
@@ -261,48 +260,50 @@ def interpolate(df, targets):
         rate = curve['rate']
         cs = CubicSpline(term, rate)
 
-        new_rate = []
-        for target in targets:
-            new_rate.append(cs(target).item())
+        new_rate = [cs(target).item() for target in targets]
         result.append({date: new_rate})
-        # result.append(new_rate)
 
     return result
 
-def calculate_cov(df, targets):
-    '''
-    first interpolate data for targets, then calculate covariance matrix
-    :param df: dataframe that contain rates information from different dates, list[dict{date, rate, term}]
-    :param targets: e.g. [1,2,3] means year1, year2, year3
-    :return: matrix
-    '''
-    targets = 365*np.array(targets)
+def calculate_cov(df, targets, log_transform=True):
+    targets = 365 * np.array(targets)
     df_interpolated = interpolate(df, targets)
-    x = []
-    for i in range(len(df_interpolated) - 1):
-        r2 = np.array(list(df_interpolated[i].values())[0])
-        r1 = np.array(list(df_interpolated[i + 1].values())[0])
-        x.insert(0, np.log(np.array(r2/r1)))
 
-    X = np.array(x)
-    for i in range(X.shape[1]):
-        X[:,i] = X[:,i]- np.mean(X[:,i])
+    
+    log_returns = [np.log(np.array(list(curve.values())[0]) / np.array(list(df_interpolated[i+1].values())[0])) for i, curve in enumerate(df_interpolated[:-1])]
+    X = np.array(log_returns)
+    
+    # Center the data
+    X = X - np.mean(X, axis=0)
+    
+    cov_matrix = np.cov(X, rowvar=False)
+    return cov_matrix
 
-    cov = X.transpose()@X
-    return cov
+# Calculate covariance matrix for log yield rates
+targets_yield = [1, 2, 3, 4, 5]
+cov_yield = calculate_cov(df_ytm, targets_yield)
 
-targets = [1,2,3,4,5]
-cov_spot = calculate_cov(df_spot, targets)
+# Calculate covariance matrix for log forward rates 
+targets_forward = [1, 2, 3, 4]
+cov_forward = calculate_cov(df_forward, targets_forward)
 
-targets = [1,2,3,4]
-cov_forward = calculate_cov(df_forward, targets)
+# Print the matrices
+print("Covariance Matrix for Log Yield Rates:")
+print(cov_yield)
+
+print("\nCovariance Matrix for Log Forward Rates:")
+print(cov_forward)
 
 ###6
-eigvalues, eigvectors = np.linalg.eig(cov_spot)
-temp = eigvectors.T@eigvectors # confirm that columns of eigenvectors are orthogonal
-eigvalues[0]/sum(eigvalues)
+# cov_yield shows NaN on X_4 therefore no valid eigenvector and eigenvalue
 
+# For cov_forward
+eigvalues_forward, eigvectors_forward = np.linalg.eig(cov_forward)
+temp_forward = eigvectors_forward.T @ eigvectors_forward  # confirm that columns of eigenvectors are orthogonal
 
-eigvalues, eigvectors = np.linalg.eig(cov_forward)
-temp = eigvectors.T@eigvectors # confirm that columns of eigenvectors are orthogonal
-eigvalues[0]/sum(eigvalues)
+print("\nEigenvectors for cov_forward:")
+print(eigvectors_forward)
+
+print("\nEigenvalues for cov_forward:")
+print(eigvalues_forward)
+
